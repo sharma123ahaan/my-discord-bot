@@ -480,6 +480,8 @@ Commands.set('dare', {
         message.reply(`😈 **Dare**: ${dares[Math.floor(Math.random() * dares.length)]}`);
     }
 });
+
+<h6>games</h6>
 Commands.set('tictactoe', {
     description: 'Play Tic Tac Toe with a friend. Usage: `$tictactoe @user`',
     async run(message) { startGame(message, TicTacToe); }
@@ -770,28 +772,44 @@ client.once('ready', async () => {
     }
 });
 
-client.on('messageCreate', async (message) => {
-    if (!message.guild || message.author.bot) return;
+client.on('messageCreate', async message => {
+    // 1. Your code to check if it's the counting channel
+    //    and then update the number and react
+    if (message.author.bot) return;
 
-    // --- Core Systems Handling (run on every message) ---
-    await handleLeveling(message);
-    await handleVerificationPassphrase(message);
-    await handleCounting(message);
+    db.get("SELECT counting_channel_id FROM config WHERE guild_id = ?", [message.guild.id], (err, row) => {
+        if (err || !row || row.counting_channel_id !== message.channel.id) {
+            // This is not the counting channel, so we can exit this part
+            // of the code, but we still want to run the command handler
+            // that is below.
+            
+            // Your counting logic goes here...
+            db.get("SELECT number, last_user_id FROM counting WHERE guild_id = ?", [message.guild.id], async (err, countRow) => {
+                if (err) return;
 
-    // --- Command Parser & Executor ---
-    if (!message.content.toLowerCase().startsWith(PREFIX)) return;
-    
+                const expectedNumber = countRow?.number ?? 1;
+                const lastUser = countRow?.last_user_id;
+
+                if (parseInt(message.content) === expectedNumber && message.author.id !== lastUser) {
+                    const newNumber = expectedNumber + 1;
+                    db.run("UPDATE counting SET number = ?, last_user_id = ? WHERE guild_id = ?", [newNumber, message.author.id, message.guild.id], (dbErr) => {
+                        if (dbErr) return;
+                        message.react("✅").catch(() => {});
+                    });
+                } else {
+                    message.react("❌").catch(() => {});
+                }
+            });
+        }
+    });
+
+    // 2. Your existing command handling logic goes here
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const commandName = args.shift().toLowerCase();
     const command = Commands.get(commandName);
 
     if (command) {
-        try {
-            await command.run(message, args);
-        } catch (error) {
-            console.error(`Error executing command ${commandName}:`, error);
-            message.reply("An error occurred while executing that command.");
-        }
+        command.run(message, args);
     }
 });
 
@@ -1195,6 +1213,7 @@ client.login(TOKEN).catch(error => {
     console.error("❌ Failed to log in:", error.message);
     console.error("This might be due to an invalid token or missing internet connection.");
 });
+
 
 
 
