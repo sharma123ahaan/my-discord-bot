@@ -369,29 +369,7 @@ Commands.set('ticket', {
 /*                                TICKET CLOSE COMMAND                                     */
 /* ======================================================================================= */
 
-Commands.set('close', {
-    description: 'Closes and deletes the ticket channel.',
-    async run(message) {
-        // Check if the user has the necessary permissions
-        if (!message.member.permissions.has('ManageChannels')) {
-            return message.reply("You don't have permission to use this command.");
-        }
 
-        // Check if the channel name starts with "ticket-"
-        if (!message.channel.name.startsWith('ticket-')) {
-            return message.reply("This is not a ticket channel.");
-        }
-
-        // Send a message before deleting the channel
-        await message.channel.send('This ticket will be closed and deleted in 5 seconds.');
-
-        // Delete the channel after a short delay
-        setTimeout(() => {
-            message.channel.delete()
-                .catch(error => console.error('Failed to delete the channel:', error));
-        }, 5000); // 5000 milliseconds = 5 seconds
-    }
-});
 
 /* ======================================================================================= */
 /*                                COMMAND DEFINITIONS                                      */
@@ -400,9 +378,9 @@ Commands.set('close', {
 const commandCategories = {
     '1': { name: '🎲 Fun & Games', description: 'Engaging games and fun commands.', commands: ['8ball', 'coinflip', 'dice', 'joke', 'meme', 'tictactoe', 'connect4', 'truth', 'dare'] },
     '2': { name: '💰 Economy', description: 'Earn and gamble your virtual currency.', commands: ['balance', 'daily', 'work', 'gamble'] },
-    '3': { name: '🛠️ Utility', description: 'Helpful tools and server information.', commands: ['ping', 'userinfo', 'serverinfo', 'invites', 'embed'] },
+    '3': { name: '🛠️ Utility', description: 'Helpful tools and server information.', commands: ['ping', 'userinfo', 'serverinfo', 'invites', 'embed', 'ticket'] },
     '4': { name: '📈 Leveling & Stats', description: 'Check your progress and rankings.', commands: ['stats', 'leaderboard'] },
-    '5': { name: '🔑 Core Systems', description: 'Info on Verification and Counting.', commands: ['verificationinfo', 'countinginfo'] },
+    '5': { name: '🔑 Core Systems', description: 'Info on Verification and Counting.', commands: ['verificationinfo', 'countinginfo', ] },
 };
 
 // ----------------- HELP COMMAND (NUMBER-BASED) -----------------
@@ -565,23 +543,54 @@ Commands.set('work', {
         });
     }
 });
-Commands.set('gamble', {
-    description: 'Gamble your coins. Usage: `$gamble <amount>`',
+Commands.set('coin', {
+    description: 'Flip a coin and bet on the outcome. Usage: `$coin <heads|tails> <amount>`',
     async run(message, args) {
-        const amount = parseInt(args[0]);
-        if (isNaN(amount) || amount <= 0) return message.reply("Please provide a valid, positive amount to gamble.");
+        const guess = args[0]?.toLowerCase();
+        const amount = parseInt(args[1]);
+
+        // 1. Validate the user's input for heads/tails and amount
+        if (!['h', 't', 'heads', 'tails'].includes(guess)) {
+            return message.reply("Please guess heads or tails. Usage: `$coin (h/t) (amt)`.");
+        }
+        if (isNaN(amount) || amount <= 0) {
+            return message.reply("Please provide a valid, positive amount to bet.");
+        }
+
+        // 2. Ensure the user exists in the database
         await ensureUserInEconomy(message.author.id);
+
+        // 3. Get the user's balance
         db.get("SELECT balance FROM economy WHERE user_id = ?", [message.author.id], (err, row) => {
-            if (err) return message.reply("Could not retrieve your balance.");
+            if (err) {
+                return message.reply("Could not retrieve your balance.");
+            }
             const balance = row?.balance ?? 0;
-            if (amount > balance) return message.reply("You don't have enough coins to gamble that much.");
-            
-            const win = Math.random() < 0.48; // Slightly less than 50% for the house edge
+
+            // 4. Check if the user has enough coins
+            if (amount > balance) {
+                return message.reply("You don't have enough coins to gamble that much.");
+            }
+
+            // 5. Flip the coin
+            const outcomes = ['heads', 'tails'];
+            const result = outcomes[Math.floor(Math.random() * outcomes.length)];
+
+            const win = guess.startsWith(result[0]); // true if guess is correct
             const newBalance = win ? balance + amount : balance - amount;
-            
+
+            // 6. Update the user's balance in the database
             db.run("UPDATE economy SET balance = ? WHERE user_id = ?", [newBalance, message.author.id], (dbErr) => {
-                if (dbErr) return message.reply("An error occurred while gambling.");
-                message.reply(win ? `🎉 **You won!** You gained ${amount} coins and now have **${newBalance}**.` : `💔 **You lost!** You lost ${amount} coins and now have **${newBalance}**.`);
+                if (dbErr) {
+                    return message.reply("An error occurred while gambling.");
+                }
+
+                const resultEmoji = win ? '🎉' : '💔';
+                const resultMessage = win ?
+                    `**You won!** The coin landed on **${result}**. You gained ${amount} coins and now have **${newBalance}**.` :
+                    `**You lost!** The coin landed on **${result}**. You lost ${amount} coins and now have **${newBalance}**.`
+
+                message.reply(`${resultEmoji} ${resultMessage}`);
             });
         });
     }
@@ -1186,6 +1195,7 @@ client.login(TOKEN).catch(error => {
     console.error("❌ Failed to log in:", error.message);
     console.error("This might be due to an invalid token or missing internet connection.");
 });
+
 
 
 
