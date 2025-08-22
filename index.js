@@ -796,9 +796,18 @@ client.on('messageCreate', async message => {
                         if (dbErr) return;
                         message.react("✅").catch(() => {});
                     });
-                } else {
-                    message.react("❌").catch(() => {});
-                }
+               } else {
+            // Send the error message
+            message.reply(`${message.author.toString()} ruined it at ${countRow.number}. The next number is 1 ❌`);
+            
+            // Reset the counting channel in the database
+            db.run("UPDATE counting SET number = 1, last_user_id = NULL WHERE guild_id = ?", [message.guild.id], (dbErr) => {
+                if (dbErr) return;
+            });
+            
+            // React with a red X
+            message.react("❌").catch(() => {});
+        }
             });
         }
     });
@@ -1213,6 +1222,7 @@ client.login(TOKEN).catch(error => {
     console.error("❌ Failed to log in:", error.message);
     console.error("This might be due to an invalid token or missing internet connection.");
 });
+
 
 
 
