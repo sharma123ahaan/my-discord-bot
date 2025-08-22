@@ -8,7 +8,7 @@
  *      This version uses a direct, prefix-based command structure as requested,
  *      eliminating previous complex handlers for simplicity and reliability.
  *
- *******************************************************************************************
+ ********************************************************************************************
  *
  * CORE FEATURES:
  *
@@ -1222,6 +1222,7 @@ client.login(TOKEN).catch(error => {
     console.error("❌ Failed to log in:", error.message);
     console.error("This might be due to an invalid token or missing internet connection.");
 });
+
 
 
 
