@@ -481,7 +481,7 @@ Commands.set('dare', {
     }
 });
 
-<h6>games</h6>
+
 Commands.set('tictactoe', {
     description: 'Play Tic Tac Toe with a friend. Usage: `$tictactoe @user`',
     async run(message) { startGame(message, TicTacToe); }
@@ -1213,6 +1213,8 @@ client.login(TOKEN).catch(error => {
     console.error("❌ Failed to log in:", error.message);
     console.error("This might be due to an invalid token or missing internet connection.");
 });
+
+
 
 
 
