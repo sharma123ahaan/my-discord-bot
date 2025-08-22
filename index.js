@@ -101,7 +101,7 @@ const levelRoles = {
 };
 
 // Verification passphrase
-const VERIFICATION_PASSPHRASE = "w";
+const VERIFICATION_PASSPHRASE = "w for whale";
 
 // Server Stats Voice Channel configuration (as requested)
 const VC_STATS_CONFIG = {
@@ -112,7 +112,7 @@ const VC_STATS_CONFIG = {
 
 // Economy configuration
 const ECONOMY_CONFIG = {
-    DAILY_COOLDOWN: 24 * 60 * 60 * 1000, // 22 hours
+    DAILY_COOLDOWN: 24 * 60 * 60 * 1000, // 24 hours
     DAILY_MIN: 200, DAILY_MAX: 500,
     WORK_COOLDOWN: 2 * 60 * 60 * 1000,   // 2 hours
     WORK_MIN: 50, WORK_MAX: 200,
@@ -310,6 +310,90 @@ function addXP(userId, amount, onLevelUp) {
 }
 
 /* ======================================================================================= */
+/*                                  TICKET COMMAND                                         */
+/* ======================================================================================= */
+
+Commands.set('ticket', {
+    description: 'Creates a private ticket for support.',
+    async run(message) {
+        const user = message.author;
+        const guild = message.guild;
+
+        // Create a unique channel name
+        const channelName = `ticket-${user.username.toLowerCase()}-${Math.random().toString(36).substring(7)}`;
+
+        const ticketChannel = await guild.channels.create({
+            name: channelName,
+            type: 0 // GuildText
+        });
+
+        // Get the @everyone role to deny permissions
+        const everyoneRole = guild.roles.cache.find(role => role.name === '@everyone');
+
+        // Set permissions
+        await ticketChannel.permissionOverwrites.set([
+            {
+                id: everyoneRole.id,
+                deny: ['ViewChannel'],
+            },
+            {
+                id: user.id,
+                allow: ['ViewChannel', 'SendMessages'],
+            },
+        ]);
+        
+        // Add permissions for a specific staff role if you have one
+        // const staffRole = guild.roles.cache.find(role => role.name === 'Moderator');
+        // if (staffRole) {
+        //     await ticketChannel.permissionOverwrites.edit(staffRole.id, {
+        //         ViewChannel: true,
+        //         SendMessages: true
+        //     });
+        // }
+
+        // Send a message in the new channel
+        const ticketEmbed = new EmbedBuilder()
+            .setTitle('Ticket Created!')
+            .setDescription(`A staff member will be with you shortly. Please explain your issue here.`)
+            .setColor('Green')
+            .setTimestamp();
+
+        await ticketChannel.send({ content: `${user} welcome to your ticket channel.`, embeds: [ticketEmbed] });
+
+        // Confirm to the user that the ticket was created
+        message.reply(`Your ticket has been created at ${ticketChannel}.`);
+    }
+});
+
+/* ======================================================================================= */
+/*                                TICKET CLOSE COMMAND                                     */
+/* ======================================================================================= */
+
+Commands.set('close', {
+    description: 'Closes and deletes the ticket channel.',
+    async run(message) {
+        // Check if the user has the necessary permissions
+        if (!message.member.permissions.has('ManageChannels')) {
+            return message.reply("You don't have permission to use this command.");
+        }
+
+        // Check if the channel name starts with "ticket-"
+        if (!message.channel.name.startsWith('ticket-')) {
+            return message.reply("This is not a ticket channel.");
+        }
+
+        // Send a message before deleting the channel
+        await message.channel.send('This ticket will be closed and deleted in 5 seconds.');
+
+        // Delete the channel after a short delay
+        setTimeout(() => {
+            message.channel.delete()
+                .catch(error => console.error('Failed to delete the channel:', error));
+        }, 5000); // 5000 milliseconds = 5 seconds
+    }
+});
+
+/* ======================================================================================= */
 /*                                COMMAND DEFINITIONS                                      */
 /* ======================================================================================= */
 
@@ -329,7 +413,7 @@ Commands.set('help', {
             .setColor(0x3498db)
             .setTitle('😏 Nebuverse Bot Help Menu')
             .setDescription('enter the number of the category you  want to explore 🫂.')
-            .setFooter({ text: 'This menu will expire in 30 seconds.' })
+            .setFooter({ text: 'This menu will expire in 60 seconds.' })
             .setTimestamp();
 
         for (const key in commandCategories) {
@@ -340,7 +424,7 @@ Commands.set('help', {
         const helpMessage = await message.channel.send({ embeds: [mainEmbed] });
 
         const filter = m => m.author.id === message.author.id && commandCategories[m.content.trim()];
-        const collector = message.channel.createMessageCollector({ filter, time: 30000, max: 1 });
+        const collector = message.channel.createMessageCollector({ filter, time: 60000, max: 1 });
 
         collector.on('collect', async m => {
             const categoryKey = m.content.trim();
@@ -1102,6 +1186,7 @@ client.login(TOKEN).catch(error => {
     console.error("❌ Failed to log in:", error.message);
     console.error("This might be due to an invalid token or missing internet connection.");
 });
+
 
 
 
