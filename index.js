@@ -1245,3 +1245,64 @@ client.login(TOKEN).catch(error => {
 
 
 
+client.on('messageCreate', async message => {
+    if (message.author.bot) return;
+
+    // This console.log will tell you if the messageCreate event is firing at all
+    console.log(`Message from ${message.author.tag}: ${message.content}`);
+
+    // Check if the message is in the counting channel
+    db.get("SELECT counting_channel_id FROM config WHERE guild_id = ?", [message.guild.id], (err, row) => {
+        if (row && row.counting_channel_id === message.channel.id) {
+            console.log("Message is in the counting channel.");
+            
+            db.get("SELECT number, last_user_id FROM counting WHERE guild_id = ?", [message.guild.id], async (err, countRow) => {
+                if (err) return;
+
+                const expectedNumber = countRow?.number ?? 1;
+                const lastUser = countRow?.last_user_id;
+
+                // This console.log will show you what the bot thinks the next number should be
+                console.log(`Expected number: ${expectedNumber}, Message content: ${message.content}`);
+                console.log(`Last user: ${lastUser}, Current user: ${message.author.id}`);
+
+                if (parseInt(message.content) === expectedNumber && message.author.id !== lastUser) {
+                    console.log("Conditions met. Attempting to react.");
+                    const newNumber = expectedNumber + 1;
+                    db.run("UPDATE counting SET number = ?, last_user_id = ? WHERE guild_id = ?", [newNumber, message.author.id, message.guild.id], (dbErr) => {
+                        if (dbErr) return;
+                        message.react("✅").catch(() => {});
+                    });
+                } else {
+                    console.log("Conditions not met. Reacting with X.");
+                    message.react("❌").catch(() => {});
+                }
+            });
+        }
+    });
+
+    // ... Your command handling code below ...
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
