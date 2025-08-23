@@ -8,7 +8,7 @@
  *      This version uses a direct, prefix-based command structure as requested,
  *      eliminating previous complex handlers for simplicity and reliability.
  *
- ********************************************************************************************
+ *******************************************************************************************
  *
  * CORE FEATURES:
  *
@@ -753,7 +753,7 @@ Commands.set('setcounting', {
 
 
 /* ======================================================================================= */
-/*                                      EVENT HANDLERS                                     */
+/*                                     EVENT HANDLERS                                     */
 /* ======================================================================================= */
 
 client.once('ready', async () => {
@@ -773,52 +773,36 @@ client.once('ready', async () => {
 });
 
 client.on('messageCreate', async message => {
-    // 1. Your code to check if it's the counting channel
-    //    and then update the number and react
+    // Ignore messages from bots
     if (message.author.bot) return;
 
-    db.get("SELECT counting_channel_id FROM config WHERE guild_id = ?", [message.guild.id], (err, row) => {
-        if (err || !row || row.counting_channel_id !== message.channel.id) {
-            // This is not the counting channel, so we can exit this part
-            // of the code, but we still want to run the command handler
-            // that is below.
-            
-            // Your counting logic goes here...
-            db.get("SELECT number, last_user_id FROM counting WHERE guild_id = ?", [message.guild.id], async (err, countRow) => {
-                if (err) return;
+    // --- Counting Channel Logic ---
+    const config = await ensureConfig(message.guild.id); // Ensure config is loaded
+    if (config && config.counting_channel_id === message.channel.id) {
+        // Process counting logic ONLY if it's the designated counting channel
+        await handleCounting(message);
+        // If it was a valid number in the counting channel, we might want to stop further processing
+        // to prevent accidental command triggering. However, for now, we'll allow commands
+        // even in the counting channel if they start with the prefix.
+    }
 
-                const expectedNumber = countRow?.number ?? 1;
-                const lastUser = countRow?.last_user_id;
+    // --- Command Handling Logic ---
+    if (!message.content.startsWith(PREFIX)) {
+        // If the message doesn't start with the prefix, and it wasn't handled by counting logic,
+        // we can potentially award XP here if you want that for non-command messages.
+        // For example:
+        // await handleLeveling(message);
+        return; // Exit if it's not a command and not handled by counting
+    }
 
-                if (parseInt(message.content) === expectedNumber && message.author.id !== lastUser) {
-                    const newNumber = expectedNumber + 1;
-                    db.run("UPDATE counting SET number = ?, last_user_id = ? WHERE guild_id = ?", [newNumber, message.author.id, message.guild.id], (dbErr) => {
-                        if (dbErr) return;
-                        message.react("✅").catch(() => {});
-                    });
-               } else {
-            // Send the error message
-            message.reply(`${message.author.toString()} ruined it at ${countRow.number}. The next number is 1 ❌`);
-            
-            // Reset the counting channel in the database
-            db.run("UPDATE counting SET number = 1, last_user_id = NULL WHERE guild_id = ?", [message.guild.id], (dbErr) => {
-                if (dbErr) return;
-            });
-            
-            // React with a red X
-            message.react("❌").catch(() => {});
-        }
-            });
-        }
-    });
-
-    // 2. Your existing command handling logic goes here
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const commandName = args.shift().toLowerCase();
     const command = Commands.get(commandName);
 
     if (command) {
-        command.run(message, args);
+        // Optional: Award XP for command usage
+        await handleLeveling(message);
+        await command.run(message, args);
     }
 });
 
@@ -870,174 +854,97 @@ client.on('guildMemberRemove', (member) => {
 /* ======================================================================================= */
 
 /**
- * Handles granting XP and processing level-ups for users.
- * @param {import('discord.js').Message} message The message that triggered the event.
- */
-async function handleLeveling(message) {
-    // Award 15 XP per message
-    addXP(message.author.id, 15, async (newLevel) => {
-        try {
-            const levelUpEmbed = new EmbedBuilder()
-                .setColor(0x00ff00)
-                .setDescription(`🎉 Congratulations <@${message.author.id}>, you have advanced to **Level ${newLevel}**!`);
-                
-            const sentMessage = await message.channel.send({ embeds: [levelUpEmbed] });
-
-            // Check for a role reward at the new level
-            const rewardRoleId = levelRoles[newLevel];
-            if (rewardRoleId) {
-                const role = message.guild.roles.cache.get(rewardRoleId);
-                if (role) {
-                    await message.member.roles.add(role);
-                    await message.channel.send(`As a reward, you've unlocked the **${role.name}** role! 🚀`);
-                }
-            }
-        } catch (err) {
-            console.error("Level-up announcement failed:", err);
-        }
-    });
-}
-
-/**
- * Checks for the verification passphrase in the verification channel.
- * @param {import('discord.js').Message} message The message that triggered the event.
- */
-async function handleVerificationPassphrase(message) {
-    if (message.channel.id !== CHANNEL_VERIFY) return;
-    if (message.content.trim().toLowerCase() === VERIFICATION_PASSPHRASE) {
-        try {
-            if (message.member.roles.cache.has(ROLE_NEWBIE)) return;
-            await message.member.roles.add(ROLE_NEWBIE);
-            await message.react("✅");
-            const reply = await message.reply("You have been verified! ✅");
-            setTimeout(() => {
-                reply.delete().catch(() => {});
-                message.delete().catch(() => {});
-            }, 5000);
-        } catch(err) {
-            console.error("Failed to assign verification role:", err);
-        }
-    }
-}
-
-/**
  * Manages the counting logic in the designated counting channel.
  * @param {import('discord.js').Message} message The message that triggered the event.
  */
 async function handleCounting(message) {
-    const config = await ensureConfig(message.guild.id);
-    if (message.channel.id !== config.counting_channel_id) return;
-    if (!/^\d+$/.test(message.content.trim())) return; // Ignore non-numeric messages
+    // Ensure we have a valid guild ID from the message
+    if (!message.guild || !message.guild.id) return;
 
-    const num = parseInt(message.content.trim(), 10);
-    db.get("SELECT number, last_user_id FROM counting WHERE guild_id = ?", [message.guild.id], async (err, row) => {
-        if (err) return;
-        const expected = row?.number ?? 1;
-        const lastId = row?.last_user_id ?? null;
-
-        if (message.author.id !== lastId && num === expected) {
-            await message.react("✅").catch(()=>{});
-            db.run("UPDATE counting SET number = ?, last_user_id = ? WHERE guild_id = ?", [expected + 1, message.author.id, message.guild.id]);
-        } else {
-            const reason = (message.author.id === lastId) ? "You can’t count twice in a row." : `The next number should be **${expected}**.`;
-            const reply = await message.reply(`❌ Oops! ${reason}`);
-            setTimeout(() => reply.delete().catch(() => {}), 8000);
-        }
-    });
-}
-
-/**
- * Ensures the verification embed with a button is present in the verify channel.
- */
-async function ensureVerifyMessage() {
-    try {
-        const channel = client.channels.cache.get(CHANNEL_VERIFY);
-        if (!channel) return;
-        const messages = await channel.messages.fetch({ limit: 20 });
-        if (messages.some(m => m.author.id === client.user.id && m.components?.[0]?.components?.[0]?.customId === "verify_button")) return;
-
-        const embed = new EmbedBuilder().setTitle("✅ Server Verification").setDescription(`Welcome! To gain access, please click the **Verify** button below or type the passphrase: \`${VERIFICATION_PASSPHRASE}\``).setColor(0x57F287);
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId("verify_button").setLabel("Verify").setStyle(ButtonStyle.Success));
-        await channel.send({ embeds: [embed], components: [row] });
-    } catch (e) { console.error("Failed to post verification message:", e); }
-}
-
-/**
- * Creates or updates the server stat voice channels.
- * @param {import('discord.js').Guild} guild The guild to update stats for.
- */
-async function refreshStatsVC(guild) {
-    const config = await ensureConfig(guild.id);
-    try { await guild.members.fetch(); } catch {}
-    const humans = guild.members.cache.filter(m => !m.user.bot).size;
-    const dob = config.dob_text || VC_STATS_CONFIG.DOB.defaultValue;
-    const goal = Number(config.goal_value || VC_STATS_CONFIG.GOAL.defaultValue);
-
-    const ensureVC = async (existingId, desiredName) => {
-        if (existingId) {
-            const channel = guild.channels.cache.get(existingId);
-            if (channel) {
-                if (channel.name !== desiredName) await channel.setName(desiredName).catch(() => {});
-                return channel.id;
-            }
-        }
-        const created = await guild.channels.create({ name: desiredName, type: ChannelType.GuildVoice, permissionOverwrites: [{ id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.Connect] }] }).catch(() => null);
-        return created?.id || null;
-    };
-    
-    const idHumans = VC_STATS_CONFIG.HUMANS.enabled ? await ensureVC(config.vc_humans_id, VC_STATS_CONFIG.HUMANS.name(humans)) : null;
-    const idDOB = VC_STATS_CONFIG.DOB.enabled ? await ensureVC(config.vc_dob_id, VC_STATS_CONFIG.DOB.name(dob)) : null;
-    const idGoal = VC_STATS_CONFIG.GOAL.enabled ? await ensureVC(config.vc_goal_id, VC_STATS_CONFIG.GOAL.name(goal)) : null;
-    
-    db.run(`UPDATE config SET vc_humans_id=?, vc_dob_id=?, vc_goal_id=? WHERE guild_id=?`, [idHumans, idDOB, idGoal, guild.id]);
-}
-
-/**
- * Schedules the regular refresh of the server stat voice channels.
- * @param {import('discord.js').Guild} guild The guild to schedule updates for.
- */
-function scheduleStatsVC(guild) {
-    refreshStatsVC(guild);
-    setInterval(() => refreshStatsVC(guild), 5 * 60 * 1000); // 5 minutes
-}
-
-/**
- * Caches all current server invites to the database for later comparison.
- * @param {import('discord.js').Guild} guild The guild whose invites to cache.
- */
-async function cacheInvitesForGuild(guild) {
-    try {
-        const currentInvites = await guild.invites.fetch();
-        db.serialize(() => {
-            const stmt = db.prepare(`REPLACE INTO invites_cache (guild_id, code, uses) VALUES (?,?,?)`);
-            currentInvites.forEach(inv => stmt.run(guild.id, inv.code, inv.uses ?? 0));
-            stmt.finalize();
+    // Fetch the config for the guild
+    const config = await new Promise((resolve, reject) => {
+        db.get("SELECT counting_channel_id, last_user_id FROM counting WHERE guild_id = ?", [message.guild.id], (err, row) => {
+            if (err) return reject(err);
+            resolve(row);
         });
-    } catch (e) {
-        console.warn(`Could not cache invites for ${guild.name} (missing permissions?).`);
+    });
+
+    if (!config || config.counting_channel_id !== message.channel.id) {
+        // Not the designated counting channel or no config found
+        return;
+    }
+
+    const expectedNumber = config.number ?? 1; // Use config.number, default to 1 if null
+    const lastUserId = config.last_user_id;
+
+    // Check if the message content is a valid number
+    const messageContent = message.content.trim();
+    if (!/^\d+$/.test(messageContent)) {
+        // If it's not a number, we don't need to do anything else for counting
+        return;
+    }
+
+    const num = parseInt(messageContent, 10);
+
+    if (message.author.id !== lastUserId && num === expectedNumber) {
+        await message.react("✅").catch(()=>{});
+        // Increment the count and update last user
+        db.run("UPDATE counting SET number = ?, last_user_id = ? WHERE guild_id = ?", [expectedNumber + 1, message.author.id, message.guild.id], (err) => {
+            if (err) console.error("Error updating counting:", err);
+        });
+    } else {
+        // Handle incorrect count or double count
+        const reason = (message.author.id === lastUserId)
+            ? "You can’t count twice in a row."
+            : `The next number should be **${expectedNumber}**.`;
+        
+        // Send the error message and reset the count
+        const reply = await message.reply(`❌ Oops! ${reason} ${message.author.toString()} ruined it at ${config.number ?? 1}. The next number is 1 ❌`);
+        
+        db.run("UPDATE counting SET number = 1, last_user_id = NULL WHERE guild_id = ?", [message.guild.id], (err) => {
+            if (err) console.error("Error resetting counting:", err);
+        });
+        
+        // React with a red X
+        message.react("❌").catch(() => {});
+        
+        // Optional: Delete the erroneous message after a delay
+        setTimeout(() => {
+            reply.delete().catch(() => {});
+            message.delete().catch(() => {});
+        }, 8000);
     }
 }
 
+// ... (Rest of your code remains the same, including command definitions, utility functions, etc.)
+// Ensure that ensureConfig is correctly defined and used, and that the database setup is correct.
+// The 'handleLeveling' function call within 'messageCreate' needs to be carefully placed.
+// If you only want XP for commands, move 'await handleLeveling(message);' inside the 'if (command)' block.
+
 /**
- * Compares new invites with cached ones to find which invite a new member used.
- * @param {import('discord.js').GuildMember} member The member who just joined.
- * @returns {Promise<import('discord.js').Invite | null>} The invite that was used, or null.
+ * Ensures a configuration row exists for a given guild in the database.
+ * If a row doesn't exist, it creates one with default values.
+ * @param {string} guildId The ID of the guild.
+ * @returns {Promise<object>} The guild's configuration object.
  */
-async function findUsedInvite(member) {
-    try {
-        const newInvites = await member.guild.invites.fetch();
-        let usedInvite = null;
-        for (const [code, invite] of newInvites) {
-            const cachedUses = await new Promise(resolve => db.get("SELECT uses FROM invites_cache WHERE guild_id = ? AND code = ?", [member.guild.id, code], (e, r) => resolve(r?.uses ?? 0)));
-            if ((invite.uses ?? 0) > cachedUses) {
-                usedInvite = invite;
-                break;
-            }
-        }
-        await cacheInvitesForGuild(member.guild);
-        return usedInvite;
-    } catch { return null; }
+function ensureConfig(guildId) {
+    return new Promise((resolve, reject) => {
+        db.get("SELECT * FROM config WHERE guild_id = ?", [guildId], (err, row) => {
+            if (err) return reject(err);
+            if (row) return resolve(row);
+            // If no row exists, insert one and then return it
+            db.run("INSERT INTO config (guild_id) VALUES (?)", [guildId], (err2) => {
+                if (err2) return reject(err2);
+                db.get("SELECT * FROM config WHERE guild_id = ?", [guildId], (err3, newRow) => {
+                    if (err3) return reject(err3);
+                    resolve(newRow);
+                });
+            });
+        });
+    });
 }
+
+// ... (all other functions and command definitions)
 
 /* ======================================================================================= */
 /*                                      GAME LOGIC                                         */
@@ -1222,6 +1129,7 @@ client.login(TOKEN).catch(error => {
     console.error("❌ Failed to log in:", error.message);
     console.error("This might be due to an invalid token or missing internet connection.");
 });
+
 
 
 
