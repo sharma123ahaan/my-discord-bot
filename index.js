@@ -815,6 +815,16 @@ client.on('messageCreate', async message => {
         }
     });
 
+    client.on("messageCreate", async (message) => {
+    if (message.author.bot || !message.guild) return;
+
+    // DEBUG
+    console.log("💬 New message:", message.content);
+
+    if (!message.content.startsWith(PREFIX)) return;
+    
+});
+
     // 2. Your existing command handling logic goes here
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const commandName = args.shift().toLowerCase();
@@ -1249,6 +1259,7 @@ client.login(TOKEN).catch(error => {
     console.error("❌ Failed to log in:", error.message);
     console.error("This might be due to an invalid token or missing internet connection.");
 });
+
 
 
 
