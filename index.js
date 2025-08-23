@@ -91,6 +91,8 @@ const CHANNEL_WELCOME = "1406978202957643776";
 const ROLE_NEWBIE = "1406978202613584037"; // Given after verification
 const ROLE_PING_ANNOUNCE = "1406978202613584035"; // The "@📢ping" role ID
 
+
+
 // Leveling role rewards (Level -> Role ID)
 const levelRoles = {
     10: "1406978202613584038", // pro
@@ -103,12 +105,13 @@ const levelRoles = {
 // Verification passphrase
 const VERIFICATION_PASSPHRASE = "w for whale";
 
-// Server Stats Voice Channel configuration (as requested)
+// VC stats config defaults
 const VC_STATS_CONFIG = {
-    HUMANS: { name: (count) => `🔒 Humans: ${count}`, enabled: true },
-    DOB: { name: (dob) => `🌐 DOB: ${dob}`, enabled: true, defaultValue: "18/08/2025" },
-    GOAL: { name: (goal) => `🎯 Member Goal: ${goal}`, enabled: true, defaultValue: 30 },
+    DOB: { defaultValue: "Date of Birth Stats" },
+    GOAL: { defaultValue: 100 }
 };
+
+
 
 // Economy configuration
 const ECONOMY_CONFIG = {
@@ -377,7 +380,7 @@ Commands.set('ticket', {
 
 const commandCategories = {
     '1': { name: '🎲 Fun & Games', description: 'Engaging games and fun commands.', commands: ['8ball', 'coinflip', 'dice', 'joke', 'meme', 'tictactoe', 'connect4', 'truth', 'dare'] },
-    '2': { name: '💰 Economy', description: 'Earn and gamble your virtual currency.', commands: ['balance', 'daily', 'work', 'gamble'] },
+    '2': { name: '💰 Economy', description: 'Earn and gamble your virtual currency.', commands: ['balance', 'daily', 'work', 'coin'] },
     '3': { name: '🛠️ Utility', description: 'Helpful tools and server information.', commands: ['ping', 'userinfo', 'serverinfo', 'invites', 'embed', 'ticket'] },
     '4': { name: '📈 Leveling & Stats', description: 'Check your progress and rankings.', commands: ['stats', 'leaderboard'] },
     '5': { name: '🔑 Core Systems', description: 'Info on Verification and Counting.', commands: ['verificationinfo', 'countinginfo', ] },
@@ -1208,6 +1211,30 @@ class Connect4 extends Game {
     }
 }
 
+
+/* ======================================================================================= */
+/*                                MESSAGE HANDLER (PREFIX)                                 */
+/* ======================================================================================= */
+
+client.on("messageCreate", async (message) => {
+    if (message.author.bot || !message.guild) return;
+    if (!message.content.startsWith(PREFIX)) return;
+
+    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+    const commandName = args.shift().toLowerCase();
+
+    const command = Commands.get(commandName);
+    if (command) {
+        try {
+            await command.run(message, args);
+        } catch (err) {
+            console.error("❌ Command error:", err);
+            message.reply("Something went wrong executing that command.");
+        }
+    }
+});
+
+
 /* ======================================================================================= */
 /*                                     BOT LOGIN                                           */
 /* ======================================================================================= */
@@ -1222,6 +1249,7 @@ client.login(TOKEN).catch(error => {
     console.error("❌ Failed to log in:", error.message);
     console.error("This might be due to an invalid token or missing internet connection.");
 });
+
 
 
 
