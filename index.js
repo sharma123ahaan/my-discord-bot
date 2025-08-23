@@ -74,6 +74,8 @@ const {
 } = require("discord.js");
 const sqlite3 = require("sqlite3").verbose();
 
+
+
 /* ======================================================================================= */
 /*                                  CONSTANTS / CONFIG                                     */
 /* ======================================================================================= */
@@ -137,15 +139,13 @@ const ECONOMY_CONFIG = {
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent, // REQUIRED for prefix commands
-        GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.GuildInvites,
-        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.MessageContent, // important
+        GatewayIntentBits.GuildMembers    // for joins/roles
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
+
 
 // Collections for commands and active games
 const Commands = new Collection();
@@ -1259,6 +1259,7 @@ client.login(TOKEN).catch(error => {
     console.error("❌ Failed to log in:", error.message);
     console.error("This might be due to an invalid token or missing internet connection.");
 });
+
 
 
 
